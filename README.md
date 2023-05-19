@@ -12,6 +12,8 @@ This student project is a RESTful API service developed with Dotnet, C#, SQL Ser
   - [Models](#models)
   - [Controllers](#controllers)
   - [Migrations](#migrations)
+  - [Data Transfer Objects (DTOs)](#data-transfer-objects-dtos)
+  - [AutoMapper](#automapper)
 - [Test the project](#test-the-project)
 - [Debugging](#debugging)
 - [License](#license)
@@ -26,6 +28,7 @@ The BlogApi project is a RESTful API service application developed with Dotnet a
 - C#
 - SQL Server
 - Entity Framework
+- AutoMapper
 - Visual Studio Code
 
 ## Project Installation
@@ -139,7 +142,13 @@ Migrations in Entity Framework allow you to manage changes to the database schem
 
 1. Open a terminal in the project's root folder.
 
-2. Run the following command to create a new migration:
+2. Run the following command to install the Entity Framework Core tools:
+
+   ```shell
+   dotnet tool install --global dotnet-ef
+   ```
+
+3. Run the following command to create a new migration:
 
    ```shell
    dotnet ef migrations add NewMigrationName
@@ -147,10 +156,94 @@ Migrations in Entity Framework allow you to manage changes to the database schem
 
    Replace `NewMigrationName` with the appropriate name for your project.
 
-3. Run the following command to apply the migrations to the database:
+4. Run the following command to apply the migrations to the database:
 
    ```shell
    dotnet ef database update
+   ```
+
+### Data Transfer Objects (DTOs)
+
+Data Transfer Objects (DTOs) are objects that define how data will be sent over the network. To create a new DTO in the project, follow these steps:
+
+1. Open Visual Studio Code in the project's root folder.
+
+2. Create a new class inside the `Dtos` folder. For example, create a class called `PostReadDto`:
+
+   ```csharp
+   namespace BlogApi.Dtos
+   {
+       public class PostReadDto
+       {
+           public int Id { get; set; }
+           public string Title { get; set; }
+           public string Content { get; set; }
+       }
+   }
+   ```
+
+   Make sure to define the necessary properties for your DTO.
+
+### AutoMapper
+
+AutoMapper is a library that allows you to map objects from one type to another. To use AutoMapper in the project, follow these steps:
+
+1. Open a terminal in the project's root folder.
+
+2. Run the following command to install the AutoMapper NuGet package:
+
+   ```shell
+   dotnet add package AutoMapper.Extensions.Microsoft.DependencyInjection
+   ```
+
+3. Open the `Program.cs` file in the project's root folder.
+
+4. Add the following code to the `ConfigureServices` method:
+
+   ```csharp
+   services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+   ```
+
+5. Create a new class inside the `Profiles` folder. For example, create a class called `BlogApiProfile`:
+
+   ```csharp
+   using AutoMapper;
+   using BlogApi.Dtos;
+   using BlogApi.Models;
+
+   namespace BlogApi.Profiles;
+
+   public class BlogApiProfile : Profile
+   {
+      public PostsProfile()
+      {
+         CreateMap<Post, PostReadDto>();
+         CreateMap<PostCreateDto, Post>();
+         CreateMap<PostUpdateDto, Post>();
+         CreateMap<Post, PostUpdateDto>();
+      }
+   }
+   ```
+
+   Make sure to define the necessary mappings for your project.
+
+6. Open the `PostsController.cs` file in the `Controllers` folder.
+
+7. Add the following code to the `PostsController` class:
+
+   ```csharp
+   private readonly IMapper _mapper;
+
+   public PostsController(IMapper mapper)
+   {
+      _mapper = mapper;
+   }
+   ```
+
+8. Use the `_mapper` field to map objects from one type to another. For example:
+
+   ```csharp
+   var postReadDto = _mapper.Map<PostReadDto>(post);
    ```
 
 ## Test the project

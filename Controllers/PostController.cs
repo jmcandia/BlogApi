@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using BlogApi.Models;
+using BlogApi.Dtos;
+using AutoMapper;
+using AutoMapper.QueryableExtensions;
+using AutoMapper.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 
 namespace BlogApi.Controllers
 {
@@ -9,31 +13,26 @@ namespace BlogApi.Controllers
     public class PostController : ControllerBase
     {
         private readonly BlogApiContext _context;
+        private readonly IMapper _mapper;
 
-        public PostController(BlogApiContext context)
+        public PostController(BlogApiContext context, IMapper mapper)
         {
             _context = context;
+            _mapper = mapper;
         }
 
         // GET: api/Post
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Post>>> GetPosts()
+        public async Task<ActionResult<IEnumerable<PostDto>>> GetPostsAsync()
         {
-            if (_context.Posts == null)
-            {
-                return NotFound();
-            }
-            return await _context.Posts.ToListAsync();
+            var posts = await _context.Posts.ProjectTo<PostDto>(_mapper.ConfigurationProvider).ToListAsync();
+            return Ok(posts);
         }
 
         // GET: api/Post/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Post>> GetPost(int id)
+        public async Task<ActionResult<PostDto>> GetPostAsync(int id)
         {
-            if (_context.Posts == null)
-            {
-                return NotFound();
-            }
             var post = await _context.Posts.FindAsync(id);
 
             if (post == null)
@@ -41,63 +40,41 @@ namespace BlogApi.Controllers
                 return NotFound();
             }
 
-            return post;
+            return Ok(_mapper.Map<PostDto>(post));
         }
 
         // PUT: api/Post/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPost(int id, Post post)
+        public async Task<IActionResult> PutPost(int id, PostDto postdto)
         {
-            if (id != post.Id)
+            if (id != postdto.Id)
             {
                 return BadRequest();
             }
-
-            _context.Entry(post).State = EntityState.Modified;
-
-            try
+            if (!PostExists(id))
             {
-                await _context.SaveChangesAsync();
+                return NotFound();
             }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PostExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
+            await _context.Posts.Persist(_mapper).InsertOrUpdateAsync<PostDto>(postdto);
+            await _context.SaveChangesAsync();
             return NoContent();
         }
 
         // POST: api/Post
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Post>> PostPost(Post post)
+        public async Task<ActionResult<Post>> PostPostAsync(PostDto postdto)
         {
-            if (_context.Posts == null)
-            {
-                return Problem("Entity set 'BlogApiContext.Posts'  is null.");
-            }
-            _context.Posts.Add(post);
+            await _context.Posts.Persist(_mapper).InsertOrUpdateAsync<PostDto>(postdto);
             await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetPost", new { id = post.Id }, post);
+            return NoContent();
         }
 
         // DELETE: api/Post/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePost(int id)
         {
-            if (_context.Posts == null)
-            {
-                return NotFound();
-            }
             var post = await _context.Posts.FindAsync(id);
             if (post == null)
             {
