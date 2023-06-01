@@ -14,6 +14,7 @@ This student project is a RESTful API service developed with Dotnet, C#, SQL Ser
   - [Migrations](#migrations)
   - [Data Transfer Objects (DTOs)](#data-transfer-objects-dtos)
   - [AutoMapper](#automapper)
+  - [Authentication](#authentication)
 - [Test the project](#test-the-project)
 - [Debugging](#debugging)
 - [License](#license)
@@ -244,6 +245,386 @@ AutoMapper is a library that allows you to map objects from one type to another.
 
    ```csharp
    var postReadDto = _mapper.Map<PostReadDto>(post);
+   ```
+
+### Authentication
+
+Authentication is the process of verifying the identity of a user or system before granting access to specific resources or functionalities. It ensures that only authorized individuals or systems can access protected information or perform certain actions.
+
+In C#, authentication can be implemented using various techniques and frameworks. One popular method is to use JSON Web Tokens (JWT) for authentication.
+
+JWT is a compact and self-contained token format that consists of three parts: header, payload, and signature. The header contains metadata about the token, such as the algorithm used for signing. The payload contains claims or statements about the user, such as their identity, roles, or permissions. The signature is used to verify the integrity of the token.
+
+Here's a step-by-step explanation of how JWT authentication works in C#:
+
+1. User Authentication: When a user attempts to authenticate, they typically provide their credentials, such as a username and password. The server verifies these credentials using various mechanisms, such as comparing against a database or using an external authentication provider like OAuth or Active Directory.
+
+2. Token Generation: If the user's credentials are valid, the server generates a JWT. The JWT is created by constructing a JSON object containing the necessary information, such as the user's ID or roles. This object is then signed using a secret key known only to the server.
+
+3. Token Issuance: The server sends the JWT back to the client as a response. The client, typically a web browser or a mobile app, receives the JWT and stores it securely, such as in a cookie or local storage.
+
+4. Token Usage: For subsequent requests to access protected resources or perform actions, the client includes the JWT in the request. This is often done by including the JWT in the Authorization header as a bearer token.
+
+5. Token Verification: On the server side, when a request with a JWT is received, the server verifies the token's integrity and authenticity. This is done by checking the signature using the same secret key used during token generation.
+
+6. Access Control: After the token is verified, the server examines the claims in the token's payload to determine if the user has the necessary permissions to access the requested resource or perform the action. If the user has the required permissions, the server processes the request and responds accordingly. Otherwise, an appropriate error response is returned.
+
+It's important to note that JWTs are self-contained, meaning the server doesn't need to store the token or perform database lookups during the verification process. This makes JWTs scalable and suitable for stateless authentication scenarios.
+
+In C#, you can use various libraries and frameworks like Microsoft Identity, IdentityServer, or third-party libraries like System.IdentityModel.Tokens.Jwt to handle JWT authentication and related operations. These libraries provide convenient methods and utilities to generate, validate, and process JWTs within your C# application.
+
+To implement authentication we must follow the steps below:
+
+1. Open a terminal in the project's root folder. Then, run the following command to install the following NuGet packages:
+
+   ```shell
+   dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+   dotnet add package Microsoft.AspNetCore.Identity.EntityFrameworkCore
+   dotnet add package System.IdentityModel.Tokens.Jwt
+   ```
+
+2. Open the `BlogApiContext.cs` file in the `Models` folder. Then, add the following code:
+
+   ```csharp
+   using Microsoft.EntityFrameworkCore;
+   using BlogApi.Models.Configurations;
+   using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+   using Microsoft.AspNetCore.Identity;
+
+   // ...
+
+   public class BlogApiContext : IdentityUserContext<IdentityUser>
+   {
+      public BlogApiContext(DbContextOptions<BlogApiContext> options)
+         : base(options) { }
+
+      // ...
+
+      protected override void OnModelCreating(ModelBuilder modelBuilder)
+      {
+         base.OnModelCreating(modelBuilder); // Add this line
+
+         // ...
+      }
+   }
+   ```
+
+3. Create the migration by running the following command:
+
+   ```shell
+   dotnet ef migrations add AddIdentity
+   dotnet ef database update
+   ```
+
+4. Open the `appsettings.json` file in the project's root folder. Then, add the following configuration:
+
+   ```json
+   "AppSettings": {
+      "Secret": "<your-super-secret-key>"
+   }
+   ```
+
+   Replace `<your-super-secret-key>` with a secret key of your choice. Remember to keep this key secure and never share it with anyone.
+
+5. Create a new folder named `Services`, and then create a new file named `TokenService.cs` inside it. Then, add the following code:
+
+   ```csharp
+   using System.Globalization;
+   using System.IdentityModel.Tokens.Jwt;
+   using System.Security.Claims;
+   using System.Text;
+   using Microsoft.AspNetCore.Identity;
+   using Microsoft.IdentityModel.Tokens;
+
+   namespace BlogApi.Services;
+
+   public class TokenService
+   {
+      private readonly IConfiguration _configuration;
+      private const int ExpirationMinutes = 30;
+
+      public TokenService(IConfiguration configuration)
+      {
+         _configuration = configuration;
+      }
+
+      public string CreateToken(IdentityUser user)
+      {
+         var expiration = DateTime.UtcNow.AddMinutes(ExpirationMinutes);
+         var token = CreateJwtToken(
+               CreateClaims(user),
+               CreateSigningCredentials(),
+               expiration
+         );
+         var tokenHandler = new JwtSecurityTokenHandler();
+         return tokenHandler.WriteToken(token);
+      }
+
+      private JwtSecurityToken CreateJwtToken(List<Claim> claims, SigningCredentials credentials,
+         DateTime expiration) =>
+         new(
+               "BlogApi",
+               "BlogApi",
+               claims,
+               expires: expiration,
+               signingCredentials: credentials
+         );
+
+      private List<Claim> CreateClaims(IdentityUser user)
+      {
+         try
+         {
+               var claims = new List<Claim>
+                  {
+                     new Claim(JwtRegisteredClaimNames.Sub, "TokenForBlogApi"),
+                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                     new Claim(JwtRegisteredClaimNames.Iat, DateTime.UtcNow.ToString(CultureInfo.InvariantCulture)),
+                     new Claim(ClaimTypes.NameIdentifier, user.Id),
+                     new Claim(ClaimTypes.Name, user.UserName!),
+                     new Claim(ClaimTypes.Email, user.Email!)
+                  };
+               return claims;
+         }
+         catch (Exception e)
+         {
+               Console.WriteLine(e);
+               throw;
+         }
+      }
+      private SigningCredentials CreateSigningCredentials()
+      {
+         return new SigningCredentials(
+               new SymmetricSecurityKey(
+                  Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings")["Secret"]!)
+               ),
+               SecurityAlgorithms.HmacSha256
+         );
+      }
+   }
+   ```
+
+6. Open the `Program.cs` file in the project's root folder. Then, add the following code:
+
+   ```csharp
+   using BlogApi.Models;
+   using Microsoft.EntityFrameworkCore;
+   using AutoMapper;
+   using AutoMapper.EquivalencyExpression;
+   using Microsoft.AspNetCore.Authentication.JwtBearer;
+   using Microsoft.IdentityModel.Tokens;
+   using System.Text;
+   using Microsoft.AspNetCore.Identity;
+   using BlogApi.Services;
+
+   // ...
+
+   // Set up authentication
+   builder.Services
+     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+     .AddJwtBearer(options =>
+     {
+         options.TokenValidationParameters = new TokenValidationParameters()
+         {
+            ClockSkew = TimeSpan.Zero,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = "BlogApi",
+            ValidAudience = "BlogApi",
+            IssuerSigningKey = new SymmetricSecurityKey(
+               Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings")["Secret"]!)
+            ),
+         };
+      });
+
+   // Set up identity
+   builder.Services
+      .AddIdentityCore<IdentityUser>(options =>
+      {
+         options.SignIn.RequireConfirmedAccount = false;
+         options.User.RequireUniqueEmail = true;
+         options.Password.RequireDigit = true;
+         options.Password.RequiredLength = 8;
+         options.Password.RequireNonAlphanumeric = true;
+         options.Password.RequireUppercase = true;
+         options.Password.RequireLowercase = true;
+      })
+      .AddEntityFrameworkStores<BlogApiContext>();
+
+   // Set up TokenService
+   builder.Services.AddScoped<TokenService>();
+
+   // ...
+
+   app.UseAuthentication(); // Add this line
+   app.UseAuthorization();
+
+   // ...
+   ```
+
+7. Create the `AccountController.cs` file in the `Controllers` folder. Then, add the following code:
+
+   ```csharp
+   using BlogApi.Dtos;
+   using BlogApi.Models;
+   using BlogApi.Services;
+   using Microsoft.AspNetCore.Identity;
+   using Microsoft.AspNetCore.Mvc;
+
+   namespace BlogApi.Controllers;
+
+   [Route("api/[controller]")]
+   [ApiController]
+   public class AuthController : ControllerBase
+   {
+      private readonly UserManager<IdentityUser> _userManager;
+      private readonly BlogApiContext _context;
+      private readonly TokenService _tokenService;
+
+      public AuthController(UserManager<IdentityUser> userManager, BlogApiContext context, TokenService tokenService)
+      {
+         _userManager = userManager;
+         _context = context;
+         _tokenService = tokenService;
+      }
+
+      [HttpPost]
+      [Route("register")]
+      public async Task<IActionResult> Register(RegisterDto registerDto)
+      {
+         if (!ModelState.IsValid)
+         {
+               return BadRequest(ModelState);
+         }
+         var result = await _userManager.CreateAsync(
+               new IdentityUser { UserName = registerDto.Username, Email = registerDto.Email },
+               registerDto.Password
+         );
+         if (result.Succeeded)
+         {
+               registerDto.Password = "";
+               return NoContent();
+         }
+         foreach (var error in result.Errors)
+         {
+               ModelState.AddModelError(error.Code, error.Description);
+         }
+         return BadRequest(ModelState);
+      }
+
+      [HttpPost]
+      [Route("login")]
+      public async Task<ActionResult<TokenDto>> Authenticate([FromBody] LoginDto request)
+      {
+         if (!ModelState.IsValid)
+         {
+               return BadRequest(ModelState);
+         }
+
+         var managedUser = await _userManager.FindByEmailAsync(request.Email);
+         if (managedUser == null)
+         {
+               return NotFound();
+         }
+         var isPasswordValid = await _userManager.CheckPasswordAsync(managedUser, request.Password);
+         if (!isPasswordValid)
+         {
+               return Unauthorized();
+         }
+         var accessToken = _tokenService.CreateToken(managedUser);
+         await _context.SaveChangesAsync();
+         return Ok(new TokenDto
+         {
+               Username = managedUser.UserName!,
+               Email = managedUser.Email!,
+               Token = accessToken,
+         });
+      }
+   }
+   ```
+
+8. Create the `RegisterDto.cs`, `LoginDto.cs` and `TokenDto.cs` files in the `Dtos` folder. Then, add the following code:
+
+   ```csharp
+   // RegisterDto.cs
+   using System.ComponentModel.DataAnnotations;
+
+   namespace BlogApi.Dtos;
+
+   public class RegisterDto
+   {
+      [Required]
+      public string Email { get; set; } = null!;
+
+      [Required]
+      public string Username { get; set; } = null!;
+
+      [Required]
+      public string Password { get; set; } = null!;
+   }
+   ```
+
+   ```csharp
+   // LoginDto.cs
+   using System.ComponentModel.DataAnnotations;
+
+   namespace BlogApi.Dtos;
+
+   public class LoginDto
+   {
+      [Required]
+      public string Email { get; set; } = null!;
+
+      [Required]
+      public string Password { get; set; } = null!;
+   }
+   ```
+
+   ```csharp
+   // TokenDto.cs
+   namespace BlogApi.Dtos;
+
+   public class TokenDto
+   {
+      public string Username { get; set; } = null!;
+      public string Email { get; set; } = null!;
+      public string Token { get; set; } = null!;
+   }
+   ```
+
+9. Now, we can add security to our API. Open the `PostsController.cs` file in the `Controllers` folder. Then, add the `[Authorize]` attribute to the class:
+
+   ```csharp
+   [Authorize]
+   [Route("api/[controller]")]
+   [ApiController]
+   public class PostsController : ControllerBase
+   {
+      // ...
+   }
+   ```
+
+   We can also add the `[Authorize]` attribute to a single method:
+
+   ```csharp
+   [HttpGet]
+   [Authorize]
+   public async Task<ActionResult<IEnumerable<PostDto>>> GetAll()
+   {
+      // ...
+   }
+   ```
+
+   If we need to allow anonymous access to a method, we can add the `[AllowAnonymous]` attribute:
+
+   ```csharp
+   [HttpGet]
+   [AllowAnonymous]
+   public async Task<ActionResult<PostDto>> Get(PostDto postDto)
+   {
+      // ...
+   }
    ```
 
 ## Test the project
