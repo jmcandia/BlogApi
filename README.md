@@ -379,9 +379,9 @@ To implement authentication we must follow the steps below:
                      new Claim(JwtRegisteredClaimNames.Sub, "TokenForBlogApi"),
                      new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                      new Claim(JwtRegisteredClaimNames.Iat, DateTime.UtcNow.ToString(CultureInfo.InvariantCulture)),
-                     new Claim(ClaimTypes.NameIdentifier, user.Id),
-                     new Claim(ClaimTypes.Name, user.UserName!),
-                     new Claim(ClaimTypes.Email, user.Email!)
+                     new Claim(JwtRegisteredClaimNames.NameId, user.Id),
+                     new Claim(JwtRegisteredClaimNames.Name, user.UserName!),
+                     new Claim(JwtRegisteredClaimNames.Email, user.Email!)
                   };
                return claims;
          }
@@ -503,8 +503,7 @@ To implement authentication we must follow the steps below:
          );
          if (result.Succeeded)
          {
-               registerDto.Password = "";
-               return NoContent();
+               return Created("User created", new { Email = registerDto.Email, Username = registerDto.Username });
          }
          foreach (var error in result.Errors)
          {
@@ -515,29 +514,28 @@ To implement authentication we must follow the steps below:
 
       [HttpPost]
       [Route("login")]
-      public async Task<ActionResult<TokenDto>> Authenticate([FromBody] LoginDto request)
+      public async Task<ActionResult<TokenDto>> Authenticate([FromBody] LoginDto loginDto)
       {
          if (!ModelState.IsValid)
          {
                return BadRequest(ModelState);
          }
 
-         var managedUser = await _userManager.FindByEmailAsync(request.Email);
-         if (managedUser == null)
+         var user = await _userManager.FindByEmailAsync(loginDto.Email);
+         if (user == null)
          {
                return NotFound();
          }
-         var isPasswordValid = await _userManager.CheckPasswordAsync(managedUser, request.Password);
+         var isPasswordValid = await _userManager.CheckPasswordAsync(user, loginDto.Password);
          if (!isPasswordValid)
          {
                return Unauthorized();
          }
-         var accessToken = _tokenService.CreateToken(managedUser);
-         await _context.SaveChangesAsync();
+         var accessToken = _tokenService.CreateToken(user);
          return Ok(new TokenDto
          {
-               Username = managedUser.UserName!,
-               Email = managedUser.Email!,
+               Username = user.UserName!,
+               Email = user.Email!,
                Token = accessToken,
          });
       }
@@ -555,12 +553,16 @@ To implement authentication we must follow the steps below:
    public class RegisterDto
    {
       [Required]
+      [EmailAddress]
       public string Email { get; set; } = null!;
 
       [Required]
       public string Username { get; set; } = null!;
 
       [Required]
+      [MinLength(8)]
+      [MaxLength(16)]
+      [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,16}$")]
       public string Password { get; set; } = null!;
    }
    ```
@@ -574,9 +576,13 @@ To implement authentication we must follow the steps below:
    public class LoginDto
    {
       [Required]
+      [EmailAddress]
       public string Email { get; set; } = null!;
 
       [Required]
+      [MinLength(8)]
+      [MaxLength(16)]
+      [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,16}$")]
       public string Password { get; set; } = null!;
    }
    ```
