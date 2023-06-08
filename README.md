@@ -329,7 +329,6 @@ To implement authentication we must follow the steps below:
 5. Create a new folder named `Services`, and then create a new file named `TokenService.cs` inside it. Then, add the following code:
 
    ```csharp
-   using System.Globalization;
    using System.IdentityModel.Tokens.Jwt;
    using System.Security.Claims;
    using System.Text;
@@ -350,55 +349,26 @@ To implement authentication we must follow the steps below:
 
       public string CreateToken(IdentityUser user)
       {
+         byte[] key = Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings")["Secret"]!);
          var expiration = DateTime.UtcNow.AddMinutes(ExpirationMinutes);
-         var token = CreateJwtToken(
-               CreateClaims(user),
-               CreateSigningCredentials(),
-               expiration
-         );
-         var tokenHandler = new JwtSecurityTokenHandler();
+
+         var claims = new List<Claim>
+         {
+               new Claim(ClaimTypes.NameIdentifier, user.Id),
+               new Claim(ClaimTypes.Name, user.UserName!),
+               new Claim(ClaimTypes.Email, user.Email!)
+         };
+
+         var tokenDescriptor = new SecurityTokenDescriptor
+         {
+               Subject = new ClaimsIdentity(claims),
+               Expires = expiration,
+               SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+         };
+
+         JwtSecurityTokenHandler tokenHandler = new JwtSecurityTokenHandler();
+         SecurityToken token = tokenHandler.CreateToken(tokenDescriptor);
          return tokenHandler.WriteToken(token);
-      }
-
-      private JwtSecurityToken CreateJwtToken(List<Claim> claims, SigningCredentials credentials,
-         DateTime expiration) =>
-         new(
-               "BlogApi",
-               "BlogApi",
-               claims,
-               expires: expiration,
-               signingCredentials: credentials
-         );
-
-      private List<Claim> CreateClaims(IdentityUser user)
-      {
-         try
-         {
-               var claims = new List<Claim>
-                  {
-                     new Claim(JwtRegisteredClaimNames.Sub, "TokenForBlogApi"),
-                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                     new Claim(JwtRegisteredClaimNames.Iat, DateTime.UtcNow.ToString(CultureInfo.InvariantCulture)),
-                     new Claim(JwtRegisteredClaimNames.NameId, user.Id),
-                     new Claim(JwtRegisteredClaimNames.Name, user.UserName!),
-                     new Claim(JwtRegisteredClaimNames.Email, user.Email!)
-                  };
-               return claims;
-         }
-         catch (Exception e)
-         {
-               Console.WriteLine(e);
-               throw;
-         }
-      }
-      private SigningCredentials CreateSigningCredentials()
-      {
-         return new SigningCredentials(
-               new SymmetricSecurityKey(
-                  Encoding.UTF8.GetBytes(_configuration.GetSection("AppSettings")["Secret"]!)
-               ),
-               SecurityAlgorithms.HmacSha256
-         );
       }
    }
    ```
@@ -419,24 +389,32 @@ To implement authentication we must follow the steps below:
    // ...
 
    // Set up authentication
+   byte[] key = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings")["Secret"]!);
    builder.Services
      .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
      .AddJwtBearer(options =>
      {
+         options.Events = new JwtBearerEvents
+         {
+            OnTokenValidated = async (context) =>
+            {
+               var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<IdentityUser>>();
+               var id = context.Principal!.Claims.First(x => x.Type == ClaimTypes.NameIdentifier).Value;
+               var user = await userManager.FindByIdAsync(id);
+               if (user == null)
+               {
+                  context.Fail("Unauthorized");
+               }
+            }
+         };
          options.TokenValidationParameters = new TokenValidationParameters()
          {
-            ClockSkew = TimeSpan.Zero,
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
+            ValidateIssuer = false,
+            ValidateAudience = false,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = "BlogApi",
-            ValidAudience = "BlogApi",
-            IssuerSigningKey = new SymmetricSecurityKey(
-               Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings")["Secret"]!)
-            ),
+            IssuerSigningKey = new SymmetricSecurityKey(key),
          };
-      });
+     });
 
    // Set up identity
    builder.Services

@@ -7,6 +7,7 @@ using BlogApi.Services;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,22 +27,30 @@ builder.Services.AddAutoMapper((serviceProvider, automapper) =>
 }, typeof(BlogApiContext).Assembly);
 
 // Set up authentication
+byte[] key = Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings")["Secret"]!);
 builder.Services
   .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
   .AddJwtBearer(options =>
   {
+      options.Events = new JwtBearerEvents
+      {
+          OnTokenValidated = async (context) =>
+          {
+              var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<IdentityUser>>();
+              var id = context.Principal!.Claims.First(x => x.Type == ClaimTypes.NameIdentifier).Value;
+              var user = await userManager.FindByIdAsync(id);
+              if (user == null)
+              {
+                  context.Fail("Unauthorized");
+              }
+          }
+      };
       options.TokenValidationParameters = new TokenValidationParameters()
       {
-          ClockSkew = TimeSpan.Zero,
-          ValidateIssuer = true,
-          ValidateAudience = true,
-          ValidateLifetime = true,
+          ValidateIssuer = false,
+          ValidateAudience = false,
           ValidateIssuerSigningKey = true,
-          ValidIssuer = "BlogApi",
-          ValidAudience = "BlogApi",
-          IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration.GetSection("AppSettings")["Secret"]!)
-         ),
+          IssuerSigningKey = new SymmetricSecurityKey(key),
       };
   });
 
