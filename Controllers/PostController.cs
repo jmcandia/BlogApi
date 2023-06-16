@@ -6,6 +6,8 @@ using AutoMapper.QueryableExtensions;
 using AutoMapper.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using System.Security.Claims;
 
 namespace BlogApi.Controllers;
 
@@ -14,11 +16,13 @@ namespace BlogApi.Controllers;
 [Authorize]
 public class PostController : ControllerBase
 {
+    private readonly UserManager<IdentityUser> _userManager;
     private readonly BlogApiContext _context;
     private readonly IMapper _mapper;
 
-    public PostController(BlogApiContext context, IMapper mapper)
+    public PostController(UserManager<IdentityUser> userManager, BlogApiContext context, IMapper mapper)
     {
+        _userManager = userManager;
         _context = context;
         _mapper = mapper;
     }
@@ -70,8 +74,19 @@ public class PostController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Post>> PostPostAsync(PostDto postdto)
     {
-        await _context.Posts.Persist(_mapper).InsertOrUpdateAsync<PostDto>(postdto);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId == null)
+        {
+            return Unauthorized();
+        }
+
+        var user = await _userManager.FindByIdAsync(userId!);
+
+        var post = await _context.Posts.Persist(_mapper).InsertOrUpdateAsync<PostDto>(postdto);
+        post.User = user!;
         await _context.SaveChangesAsync();
+
         return NoContent();
     }
 

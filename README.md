@@ -611,6 +611,12 @@ To implement authentication we must follow the steps below:
    }
    ```
 
+   To access the current user's information, we can use the `User` property of the `ControllerBase` class:
+
+   ```csharp
+   var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+   ```
+
 ## Test the project
 
 To execute the project, follow these steps:
